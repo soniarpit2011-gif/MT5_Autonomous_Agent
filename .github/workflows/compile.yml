@@ -13,25 +13,8 @@ jobs:
       - name: Checkout Repository Code
         uses: actions/checkout@v4
 
-      # 1. Download official MetaEditor
-      - name: Download MetaEditor
-        shell: powershell
-        run: |
-          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/metaeditor64.exe" -OutFile "metaeditor.exe"
-
-      # 2. Compile natively via Windows Command Line
-      - name: Compile MQL5 Expert Advisor
-        shell: cmd
-        run: |
-          metaeditor.exe /compile:"ExpertAdvisor.mq5" /log:"mql.log" /inc:"."
-          
-      # 3. Print out compilation errors if any exist
-      - name: Check Log Results
-        if: always()
-        shell: powershell
-        run: |
-          if (Test-Path "mql.log") {
-            Get-Content "mql.log"
-          } else {
-            Write-Output "No compilation log generated."
-          }
+      - name: Compile MQL5 Code
+        uses: wunderas/mql-compile-action@v1
+        with:
+          file: 'ExpertAdvisor.mq5'
+          include: '.'
