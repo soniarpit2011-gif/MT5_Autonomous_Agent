@@ -19,11 +19,11 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
 
-      # 2. Extract MT5 silently into a local directory
+      # 2. Extract MT5 silently with the /quiet flag to prevent background crashes
       - name: Install MetaTrader 5 Silently
         shell: cmd
         run: |
-          mt5setup.exe /auto /path:"C:\MT5"
+          mt5setup.exe /quiet /auto /path:"C:\MT5"
 
       # 3. Natively compile using the installed MetaEditor
       - name: Compile MQL5 Expert Advisor
