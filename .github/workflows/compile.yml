@@ -13,21 +13,25 @@ jobs:
       - name: Checkout Repository Code
         uses: actions/checkout@v4
 
-      # DOWNLOAD THE COMPILER DIRECTLY INTO THE WORKSPACE ROOT
-      - name: Download MetaEditor Compiler
+      # 1. Download official MetaEditor
+      - name: Download MetaEditor
         shell: powershell
         run: |
-          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/metaeditor64.exe" -OutFile "metaeditor64.exe"
-          if (Test-Path "metaeditor64.exe") { Write-Output "MetaEditor downloaded successfully." }
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/metaeditor64.exe" -OutFile "metaeditor.exe"
 
-      - name: Set up and Compile MQL5
-        uses: fx31337/mql-compile-action@v2
-        with:
-          path: ExpertAdvisor.mq5
-          mt-path: .
-          verbose: true
-          init-platform: false
-          path-ignore: '**/*.mqh'
-          ignore-warnings: false
-          log-file: mql.log
-          syntax-only: false
+      # 2. Compile natively via Windows Command Line
+      - name: Compile MQL5 Expert Advisor
+        shell: cmd
+        run: |
+          metaeditor.exe /compile:"ExpertAdvisor.mq5" /log:"mql.log" /inc:"."
+          
+      # 3. Print out compilation errors if any exist
+      - name: Check Log Results
+        if: always()
+        shell: powershell
+        run: |
+          if (Test-Path "mql.log") {
+            Get-Content "mql.log"
+          } else {
+            Write-Output "No compilation log generated."
+          }
