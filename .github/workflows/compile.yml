@@ -13,9 +13,9 @@ jobs:
       - name: Checkout Repository Code
         uses: actions/checkout@v4
 
-      # THIS STEP IS MISSING: It downloads MetaTrader so the compiler can find it
+      # This downloads the actual metaeditor binaries into the Windows runner environment
       - name: Set up MetaTrader Platform
-        uses: fx31337/mql-setup-action@master
+        uses: fx31337/mql-setup-action@v1
         with:
           mt-version: 5.0.0.2515
 
