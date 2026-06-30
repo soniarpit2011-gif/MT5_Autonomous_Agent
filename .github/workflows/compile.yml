@@ -13,18 +13,20 @@ jobs:
       - name: Checkout Repository Code
         uses: actions/checkout@v4
 
-      # This downloads the actual metaeditor binaries into the Windows runner environment
-      - name: Set up MetaTrader Platform
-        uses: fx31337/mql-setup-action@v1
-        with:
-          mt-version: 5.0.0.2515
+      # DOWNLOAD THE COMPILER DIRECTLY INTO THE WORKSPACE ROOT
+      - name: Download MetaEditor Compiler
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/metaeditor64.exe" -OutFile "metaeditor64.exe"
+          if (Test-Path "metaeditor64.exe") { Write-Output "MetaEditor downloaded successfully." }
 
       - name: Set up and Compile MQL5
         uses: fx31337/mql-compile-action@v2
         with:
           path: ExpertAdvisor.mq5
+          mt-path: .
           verbose: true
-          init-platform: true
+          init-platform: false
           path-ignore: '**/*.mqh'
           ignore-warnings: false
           log-file: mql.log
