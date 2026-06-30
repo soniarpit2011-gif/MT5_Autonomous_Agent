@@ -1,0 +1,22 @@
+name: Autonomous MT5 Strategy Tester
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  compile:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repository Code
+      uses: actions/checkout@v4
+
+    - name: Set up and Compile MQL5
+      uses: fx31337/mql-compile-action@v2
+      with:
+        path: 'ExpertAdvisor.mq5'
+        verbose: true
+        init-platform: true
