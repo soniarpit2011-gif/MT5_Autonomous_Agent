@@ -1,69 +1,54 @@
 //+------------------------------------------------------------------+
-//|                                                DynamicEMA_EA.mq5 |
-//|                                  Copyright 2023, Algorithmic Dev |
+//|                                                 EMA_Crossover.mq5|
+//|                                  Copyright 2023, Algorithmic Trader|
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#property copyright "Copyright 2023, Algorithmic Dev"
+#property copyright "Copyright 2023"
 #property link      "https://www.mql5.com"
 #property version   "1.00"
 #property strict
 
-// Include standard library trade class
+// Include Trade library
 #include <Trade\Trade.mqh>
 
-//--- Input Group: Risk and Money Management
+//--- Input Parameters
 input group "--- Risk & Money Management ---"
-input double             InpRiskPercent       = 1.0;       // Risk Percent per Trade
-input double             InpDefaultLotSize    = 0.01;      // Default/Minimum Lot Size
-input double             InpATRMultiplier     = 1.5;       // ATR Multiplier for Stop Loss
-input double             InpRRRatio           = 1.5;       // Risk-to-Reward Ratio (TP = SL * RR)
+input double   InpRiskPercent       = 1.0;       // Risk Percent per Trade
+input int      InpStopLossPoints    = 300;       // Stop Loss in Points (e.g., 30 pips)
+input int      InpTakeProfitPoints   = 450;       // Take Profit in Points (1:1.5 Risk-to-Reward)
+input ulong    InpMagicNumber       = 123456;    // Magic Number
 
-//--- Input Group: Strategy Parameters
-input group "--- Strategy Parameters ---"
-input int                InpFastMAPeriod      = 9;         // Fast EMA Period
-input int                InpSlowMAPeriod      = 21;        // Slow EMA Period
-input ENUM_MA_METHOD     InpMAMethod          = MODE_EMA;  // Moving Average Method
-input int                InpATRPeriod         = 14;        // ATR Period
-
-//--- Input Group: Execution Settings
-input group "--- Execution Settings ---"
-input ulong              InpMagicNumber       = 102938;    // Expert Magic Number
-input ulong              InpSlippage          = 30;        // Slippage in Points
+input group "--- Indicator Settings ---"
+input int      InpFastMAPeriod      = 12;        // Fast EMA Period
+input int      InpSlowMAPeriod      = 26;        // Slow EMA Period
+input ENUM_APPLIED_PRICE InpAppliedPrice = PRICE_CLOSE; // Applied Price
 
 //--- Global Variables
 CTrade      trade;
-int         h_fast_ma;
-int         h_slow_ma;
-int         h_atr;
-datetime    last_bar_time;
+int         fastMAHandle;
+int         slowMAHandle;
+datetime    lastBarTime;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   // Reset the bar tracker to ensure signal evaluation starts fresh
-   last_bar_time = 0;
-
-   // Set up trading configuration
+   // Set magic number for the trade object
    trade.SetExpertMagicNumber(InpMagicNumber);
-   trade.SetDeviationInPoints(InpSlippage);
+   trade.SetMarginMode();
    
-   // Handle execution filling mode automatically
-   trade.SetTypeFillingBySymbol(_Symbol);
-
-   // Initialize indicator handles
-   h_fast_ma = iMA(_Symbol, _Period, InpFastMAPeriod, 0, InpMAMethod, PRICE_CLOSE);
-   h_slow_ma = iMA(_Symbol, _Period, InpSlowMAPeriod, 0, InpMAMethod, PRICE_CLOSE);
-   h_atr     = iATR(_Symbol, _Period, InpATRPeriod);
-
-   // Validate handles
-   if(h_fast_ma == INVALID_HANDLE || h_slow_ma == INVALID_HANDLE || h_atr == INVALID_HANDLE)
+   // Initialize indicators
+   fastMAHandle = iMA(_Symbol, _Period, InpFastMAPeriod, 0, MODE_EMA, InpAppliedPrice);
+   slowMAHandle = iMA(_Symbol, _Period, InpSlowMAPeriod, 0, MODE_EMA, InpAppliedPrice);
+   
+   if(fastMAHandle == INVALID_HANDLE || slowMAHandle == INVALID_HANDLE)
    {
-      Print("Error: Failed to initialize indicator handles.");
+      Print("Failed to initialize indicators. EA stopped.");
       return(INIT_FAILED);
    }
-
+   
+   lastBarTime = 0;
    return(INIT_SUCCEEDED);
 }
 
@@ -72,10 +57,9 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   // Release indicator handles to free up system memory
-   IndicatorRelease(h_fast_ma);
-   IndicatorRelease(h_slow_ma);
-   IndicatorRelease(h_atr);
+   // Release indicator handles
+   IndicatorRelease(fastMAHandle);
+   IndicatorRelease(slowMAHandle);
 }
 
 //+------------------------------------------------------------------+
@@ -83,135 +67,141 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // Strictly check signals and execute transactions on bar completion
-   if(!IsNewBar()) return;
-
-   // Check if data is synchronized and calculated properly
-   if(BarsCalculated(h_fast_ma) < 5 || BarsCalculated(h_slow_ma) < 5 || BarsCalculated(h_atr) < 5) return;
-
-   // Declare buffers to read historical data (Index 1 is the most recently completed bar)
-   double fast_ma[3], slow_ma[3], atr[2];
+   // Check for bar close (execute entry logic only when a new bar starts)
+   datetime currentBarTime = iTime(_Symbol, _Period, 0);
+   if(currentBarTime == lastBarTime)
+   {
+      return; 
+   }
    
-   if(CopyBuffer(h_fast_ma, 0, 0, 3, fast_ma) < 3) return;
-   if(CopyBuffer(h_slow_ma, 0, 0, 3, slow_ma) < 3) return;
-   if(CopyBuffer(h_atr, 0, 0, 2, atr) < 2) return;
+   // Check if we already have an open position with this magic number on this symbol
+   if(HasOpenPosition())
+   {
+      return;
+   }
 
-   // Do not open parallel trades if a trade managed by this EA is active
-   if(HasOpenPositions()) return;
+   // Retrieve indicator values
+   double fastValues[3];
+   double slowValues[3];
+   
+   if(CopyBuffer(fastMAHandle, 0, 1, 2, fastValues) < 2 ||
+      CopyBuffer(slowMAHandle, 0, 1, 2, slowValues) < 2)
+   {
+      Print("Failed to copy indicator buffer data.");
+      return;
+   }
+   
+   // fastValues[0] is Bar 2, fastValues[1] is Bar 1 (most recently completed bar)
+   double fastPrev = fastValues[0];
+   double fastCurr = fastValues[1];
+   double slowPrev = slowValues[0];
+   double slowCurr = slowValues[1];
+   
+   // Check Crossover signals
+   bool buySignal  = (fastPrev <= slowPrev && fastCurr > slowCurr);
+   bool sellSignal = (fastPrev >= slowPrev && fastCurr < slowCurr);
+   
+   if(buySignal)
+   {
+      ExecuteBuy();
+      lastBarTime = currentBarTime; // Lock to prevent multi-executions on the same bar
+   }
+   else if(sellSignal)
+   {
+      ExecuteSell();
+      lastBarTime = currentBarTime; // Lock to prevent multi-executions on the same bar
+   }
+}
 
-   // Evaluate EMA Cross over completed bars
-   bool bull_cross = (fast_ma[1] > slow_ma[1]) && (fast_ma[2] <= slow_ma[2]);
-   bool bear_cross = (fast_ma[1] < slow_ma[1]) && (fast_ma[2] >= slow_ma[2]);
-
-   if(!bull_cross && !bear_cross) return;
-
-   // Gather market environment parameters
+//+------------------------------------------------------------------+
+//| Execute a Buy order with dynamic lot size                        |
+//+------------------------------------------------------------------+
+void ExecuteBuy()
+{
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double slPrice = NormalizeDouble(ask - (InpStopLossPoints * _Point), _Digits);
+   double tpPrice = NormalizeDouble(ask + (InpTakeProfitPoints * _Point), _Digits);
+   
+   double lotSize = CalculateLotSize(InpStopLossPoints);
+   
+   if(!trade.Buy(lotSize, _Symbol, ask, slPrice, tpPrice, "EMA Crossover Buy"))
+   {
+      Print("Error opening BUY position: ", trade.ResultRetcodeDescription());
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Execute a Sell order with dynamic lot size                       |
+//+------------------------------------------------------------------+
+void ExecuteSell()
+{
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double slPrice = NormalizeDouble(bid + (InpStopLossPoints * _Point), _Digits);
+   double tpPrice = NormalizeDouble(bid - (InpTakeProfitPoints * _Point), _Digits);
    
-   // Base Stop Loss calculation on the ATR of the completed bar
-   double atr_val = atr[1];
-   double sl_distance = atr_val * InpATRMultiplier;
+   double lotSize = CalculateLotSize(InpStopLossPoints);
    
-   // Check against the broker's minimum STOP LEVEL limitation
-   double stops_level = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
-   if(stops_level == 0) stops_level = 10 * _Point; // Default safety cushion of 10 points
-   
-   if(sl_distance < stops_level)
+   if(!trade.Sell(lotSize, _Symbol, bid, slPrice, tpPrice, "EMA Crossover Sell"))
    {
-      sl_distance = stops_level + (5 * _Point);
-   }
-
-   // Dynamically calculate trade allocation
-   double lot_size = CalculateLotSize(sl_distance);
-
-   // Execute trades
-   if(bull_cross)
-   {
-      double sl = ask - sl_distance;
-      double tp = ask + (sl_distance * InpRRRatio);
-      
-      sl = NormalizeDouble(sl, _Digits);
-      tp = NormalizeDouble(tp, _Digits);
-      
-      trade.Buy(lot_size, _Symbol, ask, sl, tp, "EMA Cross Buy");
-   }
-   else if(bear_cross)
-   {
-      double sl = bid + sl_distance;
-      double tp = bid - (sl_distance * InpRRRatio);
-      
-      sl = NormalizeDouble(sl, _Digits);
-      tp = NormalizeDouble(tp, _Digits);
-      
-      trade.Sell(lot_size, _Symbol, bid, sl, tp, "EMA Cross Sell");
+      Print("Error opening SELL position: ", trade.ResultRetcodeDescription());
    }
 }
 
 //+------------------------------------------------------------------+
-//| Tracks transition to a new bar                                   |
+//| Calculate Trade Lot Size based on strictly enforced constraints  |
 //+------------------------------------------------------------------+
-bool IsNewBar()
+double CalculateLotSize(double slPoints)
 {
-   datetime current_bar_time = iTime(_Symbol, _Period, 0);
-   if(current_bar_time == 0) return false;
-   if(current_bar_time != last_bar_time)
-   {
-      last_bar_time = current_bar_time;
-      return true;
-   }
-   return false;
-}
-
-//+------------------------------------------------------------------+
-//| Calculates trade size based on risk parameters                    |
-//+------------------------------------------------------------------+
-double CalculateLotSize(double sl_distance_price)
-{
-   if(sl_distance_price <= 0) return InpDefaultLotSize;
-
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-   double risk_amount = balance * (InpRiskPercent / 100.0);
+   double riskAmount = balance * (InpRiskPercent / 100.0);
    
-   double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    
-   if(tick_size == 0 || tick_value == 0) return InpDefaultLotSize;
-   
-   double sl_points = sl_distance_price / _Point;
-   double point_value = (tick_value / tick_size) * _Point;
-   double calculated_lot = risk_amount / (sl_points * point_value);
-   
-   double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   double lot_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   
-   // Handle dynamic minimum constraints. Force strictly to 0.01 (or minimum step)
-   if(calculated_lot < min_lot)
+   if(tickValue <= 0 || tickSize <= 0 || slPoints <= 0)
    {
-      calculated_lot = min_lot;
-   }
-   else
-   {
-      calculated_lot = MathRound(calculated_lot / lot_step) * lot_step;
-      if(calculated_lot > max_lot) calculated_lot = max_lot;
+      return SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    }
    
-   return NormalizeDouble(calculated_lot, 2);
+   // Convert points to ticks
+   double pointsToTicks = slPoints * (_Point / tickSize);
+   double riskPerLot = pointsToTicks * tickValue;
+   
+   double calculatedLot = riskAmount / riskPerLot;
+   
+   // Adjust lot size to broker specifications
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   calculatedLot = MathFloor(calculatedLot / lotStep) * lotStep;
+   
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   
+   // Clamp trade sizes
+   if(calculatedLot < minLot)
+   {
+      calculatedLot = minLot; // Dynamic override to 0.01 lot minimum
+   }
+   if(calculatedLot > maxLot)
+   {
+      calculatedLot = maxLot;
+   }
+   
+   return NormalizeDouble(calculatedLot, 2);
 }
 
 //+------------------------------------------------------------------+
-//| Checks if the EA currently manages any open position             |
+//| Check if Expert Advisor already has active positions            |
 //+------------------------------------------------------------------+
-bool HasOpenPositions()
+bool HasOpenPosition()
 {
    int total = PositionsTotal();
    for(int i = 0; i < total; i++)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket > 0)
+      ulong positionTicket = PositionGetTicket(i);
+      if(positionTicket > 0)
       {
-         if(PositionGetString(POSITION_SYMBOL) == _Symbol && PositionGetInteger(POSITION_MAGIC) == InpMagicNumber)
+         if(PositionGetString(POSITION_SYMBOL) == _Symbol && 
+            PositionGetInteger(POSITION_MAGIC) == InpMagicNumber)
          {
             return true;
          }
