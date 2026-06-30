@@ -13,8 +13,31 @@ jobs:
       - name: Checkout Repository Code
         uses: actions/checkout@v4
 
-      - name: Compile MQL5 Code
-        uses: wunderas/mql-compile-action@v1
-        with:
-          file: 'ExpertAdvisor.mq5'
-          include: '.'
+      # 1. Download official full MT5 setup executable
+      - name: Download MT5 Installer
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
+
+      # 2. Extract MT5 silently into a local directory
+      - name: Install MetaTrader 5 Silently
+        shell: cmd
+        run: |
+          mt5setup.exe /auto /path:"C:\MT5"
+
+      # 3. Natively compile using the installed MetaEditor
+      - name: Compile MQL5 Expert Advisor
+        shell: cmd
+        run: |
+          "C:\MT5\metaeditor64.exe" /compile:"ExpertAdvisor.mq5" /log:"mql.log" /inc:"."
+
+      # 4. Read out the log results to look for syntax issues
+      - name: Check Log Results
+        if: always()
+        shell: powershell
+        run: |
+          if (Test-Path "mql.log") {
+            Get-Content "mql.log"
+          } else {
+            Write-Output "No compilation log generated."
+          }
