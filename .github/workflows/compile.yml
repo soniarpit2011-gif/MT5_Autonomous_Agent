@@ -13,6 +13,12 @@ jobs:
       - name: Checkout Repository Code
         uses: actions/checkout@v4
 
+      # THIS STEP IS MISSING: It downloads MetaTrader so the compiler can find it
+      - name: Set up MetaTrader Platform
+        uses: fx31337/mql-setup-action@master
+        with:
+          mt-version: 5.0.0.2515
+
       - name: Set up and Compile MQL5
         uses: fx31337/mql-compile-action@v2
         with:
