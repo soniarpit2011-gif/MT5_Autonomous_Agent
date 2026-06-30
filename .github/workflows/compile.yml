@@ -14,9 +14,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up and Compile MQL5
-        uses: fx31337/mql-compile-action@v2
+        uses: fx31337/mql-compile-action@master
         with:
           path: ExpertAdvisor.mq5
-          init-platform: true
-          mt-version: 5.0.0.4500
+          include: .
+          mt-version: 5.0.0.2515
           verbose: true
