@@ -1,0 +1,25 @@
+name: compile
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  compile:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Set up and Compile MQL5
+        uses: fx31337/mql-compile-action@v2
+        with:
+          path: ExpertAdvisor.mq5
+          verbose: true
+          init-platform: true
+          path-ignore: '**/*.mqh'
+          ignore-warnings: false
+          log-file: mql.log
+          syntax-only: false
