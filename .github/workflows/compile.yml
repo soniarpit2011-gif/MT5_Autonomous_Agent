@@ -19,7 +19,7 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
 
-      # 2. Extract MT5 directly to the runner workspace directory silently
+      # 2. Extract MT5 directly to the runner workspace directory
       - name: Extract Live Platform Architecture
         shell: cmd
         run: |
@@ -27,19 +27,27 @@ jobs:
           copy "%CD%\mt5_terminal\metaeditor64.exe" "metaeditor.exe"
           copy "%CD%\mt5_terminal\terminal64.exe" "terminal.exe"
 
-      # 3. Natively compile using the freshly extracted MetaEditor
+      # 3. Create the standard sandbox folder structure MetaTrader expects
+      - name: Initialize MT5 Directory Structure
+        shell: cmd
+        run: |
+          mkdir "%CD%\mt5_terminal\MQL5\Experts"
+          mkdir "%CD%\mt5_terminal\MQL5\Include"
+
+      # 4. Natively compile using the freshly extracted MetaEditor
       - name: Compile MQL5 Expert Advisor
         shell: cmd
         run: |
           metaeditor.exe /compile:"ExpertAdvisor.mq5" /log:"mql.log" /inc:"."
+          if exist "ExpertAdvisor.ex5" copy "ExpertAdvisor.ex5" "%CD%\mt5_terminal\MQL5\Experts\"
 
-      # 4. Run Automated Strategy Test in containerized sandbox mode
+      # 5. Run Automated Strategy Test in containerized sandbox mode
       - name: Run Strategy Backtest
         shell: cmd
         run: |
           terminal.exe /portable /config:"%CD%\backtest.ini"
 
-      # 5. Export structural backtest reports and log data
+      # 6. Export structural backtest reports and log data
       - name: Upload Test Report
         if: always()
         uses: actions/upload-artifact@v4
