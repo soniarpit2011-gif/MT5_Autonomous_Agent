@@ -33,11 +33,11 @@ jobs:
         run: |
           metaeditor.exe /compile:"ExpertAdvisor.mq5" /log:"mql.log" /inc:"."
 
-      # 4. Run Automated Backtest
+      # 4. Run Automated Backtest with portable and network bypass flags
       - name: Run Strategy Backtest
         shell: cmd
         run: |
-          terminal64.exe /config:"%CD%\backtest.ini"
+          terminal64.exe /portable /config:"%CD%\backtest.ini"
 
       # 5. Save the backtest results as a downloadable artifact
       - name: Upload Test Report
