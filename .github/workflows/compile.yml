@@ -1,4 +1,4 @@
-name: compile
+name: autonomous-agent-loop
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
-  compile:
+  backtest-loop:
     runs-on: windows-latest
     steps:
       - name: Checkout Repository Code
@@ -19,12 +19,13 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
 
-      # 2. Extract MT5 silently using the command line extract tool
+      # 2. Extract MT5 silently
       - name: Extract MT5 Compiler Package
         shell: cmd
         run: |
           mt5setup.exe /auto /path:"C:\MT5"
           copy "C:\MT5\metaeditor64.exe" "metaeditor.exe"
+          copy "C:\MT5\terminal64.exe" "terminal64.exe"
 
       # 3. Natively compile using the extracted MetaEditor
       - name: Compile MQL5 Expert Advisor
@@ -32,13 +33,18 @@ jobs:
         run: |
           metaeditor.exe /compile:"ExpertAdvisor.mq5" /log:"mql.log" /inc:"."
 
-      # 4. Read out the log results to see code issues
-      - name: Check Log Results
-        if: always()
-        shell: powershell
+      # 4. Run Automated Backtest
+      - name: Run Strategy Backtest
+        shell: cmd
         run: |
-          if (Test-Path "mql.log") {
-            Get-Content "mql.log"
-          } else {
-            Write-Output "No compilation log generated."
-          }
+          terminal64.exe /config:"%CD%\backtest.ini"
+
+      # 5. Save the backtest results as a downloadable artifact
+      - name: Upload Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strategy-tester-report
+          path: |
+            tester_report.html
+            mql.log
