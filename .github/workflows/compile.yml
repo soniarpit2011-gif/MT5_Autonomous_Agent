@@ -13,10 +13,32 @@ jobs:
       - name: Checkout Repository Code
         uses: actions/checkout@v4
 
-      - name: Set up and Compile MQL5
-        uses: fx31337/mql-compile-action@master
-        with:
-          path: ExpertAdvisor.mq5
-          include: .
-          mt-version: 5.0.0.2515
-          verbose: true
+      # 1. Download official MT5 setup executable
+      - name: Download MT5 Installer
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "mt5setup.exe"
+
+      # 2. Extract MT5 silently using the command line extract tool
+      - name: Extract MT5 Compiler Package
+        shell: cmd
+        run: |
+          mt5setup.exe /auto /path:"C:\MT5"
+          copy "C:\MT5\metaeditor64.exe" "metaeditor.exe"
+
+      # 3. Natively compile using the extracted MetaEditor
+      - name: Compile MQL5 Expert Advisor
+        shell: cmd
+        run: |
+          metaeditor.exe /compile:"ExpertAdvisor.mq5" /log:"mql.log" /inc:"."
+
+      # 4. Read out the log results to see code issues
+      - name: Check Log Results
+        if: always()
+        shell: powershell
+        run: |
+          if (Test-Path "mql.log") {
+            Get-Content "mql.log"
+          } else {
+            Write-Output "No compilation log generated."
+          }
